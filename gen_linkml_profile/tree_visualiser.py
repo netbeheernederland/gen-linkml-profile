@@ -76,12 +76,15 @@ class TreeVisualiser:
         )
         value = (
             node.get('cim:TransformerEnd.endNumber')
-            or node.get('cim:AnalogValue.value')
             or node.get('cim:ActivePower.value')
+            or node.get('cim:AnalogValue.value')
             or node.get('cim:StreetAddress.postalCode')
             or node.get('cim:StreetDetail.number')
+            or node.get('cim:Voltage.value')
+            or node.get('nl:IdentifiedObject.europeanArticleNumberEAN')
             or None
         )
+        value = value['@value'] if isinstance(value, dict) and '@value' in value else value
         name = f'{name} |{value}|' if value else name
         node_type = node.get('@type', '')
         if isinstance(node_type, list):

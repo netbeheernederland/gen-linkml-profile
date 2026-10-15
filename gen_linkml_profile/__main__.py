@@ -285,19 +285,58 @@ def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
     """Visualise a JSON-LD as tree"""
     from .tree_visualiser import TreeVisualiser
     from json import load
+    from click import prompt, clear
 
     exclude = exclude if exclude is not None else []
     nodes = {}
     for f in files:
-        # get nodes from @graph
-        nodes = nodes | {
-            n["@id"]: n
-            for n in load(f).get("@graph", [])
-            if "@id" in n
-        }
+        for n in load(f).get('@graph', []):
+            if '@id' not in n:
+                continue
+            node_id = n['@id']
+            if node_id in nodes:
+                log.warning(f'Duplicate @id "{node_id}" found in {f.name}')
+            nodes[node_id] = n
     visualiser = TreeVisualiser(nodes)
-    echo()
-    visualiser.show(root_id, depth, max_children, full_id, recursive, exclude)
+    start_id = root_id
+
+    while True:
+        clear()
+        echo()
+
+        if root_id:
+            try:
+                visualiser.show(
+                    root_id,
+                    depth,
+                    max_children,
+                    full_id,
+                    recursive,
+                    exclude,
+                )
+            except ValueError:
+                echo('Invalid root ID')
+        else:
+            echo('No root node selected.')
+
+        echo()
+        command = prompt(
+            'Root @id (d to change depth, r to reset, q to quit)',
+            default=root_id or '',
+        )
+
+        if command.lower() == 'q':
+            break
+        elif command.lower() == 'r':
+            root_id = start_id
+        elif command.lower() == 'd':
+            depth = prompt(
+                'Recursion depth',
+                default=depth,
+                type=int,
+            )
+        else:
+            root_id = command
 
 
 @cli.command()
