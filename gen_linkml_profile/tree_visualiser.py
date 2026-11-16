@@ -11,6 +11,7 @@ log = logging.getLogger(__name__)
 class TreeVisualiser:
     def __init__(self, nodes):
         self.nodes = nodes
+        log.info(f'Number of individuals in graph: "{len(self.nodes)}"')
         self.incoming = self._build_incoming_index()
         self.outgoing = self._build_outgoing_index()
 

@@ -243,12 +243,13 @@ def template(templatefile, var, delimiter):
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
     from uuid import uuid4
     from dateutil import parser
-    from datetime import timezone
+    from datetime import timezone, datetime
 
     env = Environment(loader=FileSystemLoader('.'),
                       undefined=StrictUndefined, autoescape=False)
     env.globals["uuid4"] = lambda: str(uuid4())
     env.globals["uuid5"] = uuid5_with_domain
+    env.globals["strftime"] = lambda fmt: datetime.now().strftime(fmt)
     env.filters["xsd_datetime"] = lambda v: (
         (lambda dt: dt.replace(tzinfo=timezone.utc)
          .isoformat(timespec="milliseconds")
@@ -321,7 +322,7 @@ def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
 
         echo()
         command = prompt(
-            'Root @id (d to change depth, r to reset, q to quit)',
+            'Root @id (d for depth, m for children, r to reset, q to quit)',
             default=root_id or '',
         )
 
@@ -333,6 +334,12 @@ def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
             depth = prompt(
                 'Recursion depth',
                 default=depth,
+                type=int,
+            )
+        elif command.lower() == 'm':
+            max_children = prompt(
+                'Maximum children',
+                default=max_children,
                 type=int,
             )
         else:
