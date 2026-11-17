@@ -285,20 +285,14 @@ def template(templatefile, var, delimiter):
 def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
     """Visualise a JSON-LD as tree"""
     from .tree_visualiser import TreeVisualiser
-    from json import load
+    from .jsonld_store import JsonLdStore
+    from .relation_index import RelationIndex
     from click import prompt, clear
 
     exclude = exclude if exclude is not None else []
-    nodes = {}
-    for f in files:
-        for n in load(f).get('@graph', []):
-            if '@id' not in n:
-                continue
-            node_id = n['@id']
-            if node_id in nodes:
-                log.warning(f'Duplicate @id "{node_id}" found in {f.name}')
-            nodes[node_id] = n
-    visualiser = TreeVisualiser(nodes)
+    nodes = JsonLdStore(files, index_dir=".jsonld_index", cache_size=1000)
+    relations = RelationIndex(nodes)
+    visualiser = TreeVisualiser(nodes, relations)
     start_id = root_id
 
     while True:
@@ -352,18 +346,12 @@ def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
 def split(files, root_id):
     """Visualise a JSON-LD as tree"""
     from .tree_walker import TreeWalker
-    from json import load, dumps
+    from .jsonld_store import JsonLdStore
+    from .relation_index import RelationIndex
+    from json import dumps
 
-
-    nodes = {}
-    for f in files:
-        log.info(f'Loading file: {f.name}')
-        # get nodes from @graph
-        nodes = nodes | {
-            n["@id"]: n
-            for n in load(f).get("@graph", [])
-            if "@id" in n
-        }
+    nodes = JsonLdStore(files, index_dir=".jsonld_index", cache_size=1000)
+    relations = RelationIndex(nodes)
 
     log.info('Building tree')
 
