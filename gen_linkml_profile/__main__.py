@@ -279,19 +279,24 @@ TREE_PATTERNS = {
         'cim:Terminal',
         'cim:ConnectivityNode',
         'cim:VoltageLevel',
+        ['cim:BaseVoltage', 'cim:EnergyConsumer'],
     ],
     'EC': [
         'cim:EnergyConsumer',
-        ['cim:Location', 'cim:UsagePoint'],
-        'cim:StreetAddress',
-        'cim:StreetDetail'
+        ['cim:Location', 'cim:UsagePoint', 'cim:Terminal'],
+        ['cim:StreetAddress', 'cim:TopologicalNode'],
+        ['cim:StreetDetail', 'cim:Terminal'],
+        'cim:PowerTransformerEnd',
+        'cim:PowerTransformer'
     ],
-    'PTE': [
+    'PT': [
+        'cim:PowerTransformer',
         'cim:PowerTransformerEnd',
         'cim:Terminal',
         'cim:TopologicalNode',
         'cim:Terminal',
-        'cim:PowerTransformerEnd'
+        'cim:PowerTransformerEnd',
+        'cim:PowerTransformer',
     ],
 }
 
@@ -339,6 +344,7 @@ def tree(files, root_id, depth, max_children, full_id, hide_connectivity, exclud
                         max_children,
                         full_id,
                         exclude,
+                        hide_connectivity
                     )
                 else:
                     visualiser.show_pattern(
@@ -346,6 +352,7 @@ def tree(files, root_id, depth, max_children, full_id, hide_connectivity, exclud
                         TREE_PATTERNS[selected_pattern],
                         hide_connectivity,
                         full_id,
+                        max_children
                     )
 
             except ValueError as exc:

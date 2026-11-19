@@ -35,7 +35,7 @@ class TreeVisualiser:
             if isinstance(value, dict) and "@value" in value
             else value
         )
-        name = f"{name} |{value}|" if value else name
+        name = f"|{value}| {name}" if value else name
 
         node_type = node.get("@type", "")
         if isinstance(node_type, list):
@@ -52,6 +52,7 @@ class TreeVisualiser:
         max_children: int = 5,
         full_id: bool = False,
         exclude_types=None,
+        hide_connectivity: bool = False,
     ):
         if start_id is None:
             raise ValueError("start_id must be specified")
@@ -70,6 +71,7 @@ class TreeVisualiser:
             max_children=max_children,
             full_id=full_id,
             exclude_types=exclude_types,
+            hide_connectivity=hide_connectivity,
         )
 
         tree.show(sorting=False)
@@ -82,6 +84,7 @@ class TreeVisualiser:
         full_id: bool = False,
         recursive: bool = False,
         exclude_types=None,
+        hide_connectivity: bool = False,
     ) -> Tree:
         if start_id not in self.nodes:
             raise ValueError(f"Unknown start_id: {start_id}")
@@ -94,6 +97,11 @@ class TreeVisualiser:
             "cim:GeographicalRegion",
         }
 
+        hidden_types = {
+            "cim:Terminal",
+            "cim:ConnectivityNode",
+        } if hide_connectivity else set()
+
         # Deze combinaties worden niet verder uitgewerkt.
         skip_child_types = {
             "cim:Substation": {"cim:SubGeographicalRegion"},
@@ -102,10 +110,12 @@ class TreeVisualiser:
 
         tree = Tree()
         root_id = str(uuid4())
+
         tree.create_node(self.label(start_id, full_id), root_id)
 
         queue = deque([(start_id, root_id, 0, None)])
         expanded_subtrees = {start_id}
+
         eligibility_cache = {}
         type_cache = {}
 
@@ -152,51 +162,84 @@ class TreeVisualiser:
                 for other_id, _ in adjacent
             )
 
+        def collect_targets(node_id):
+            """
+            Verzamel zichtbare relaties.
+
+            Connectivity-objecten worden transparant doorlopen.
+            De gevonden zichtbare objecten worden aan dezelfde
+            zichtbare ouder gekoppeld.
+            """
+            new_nodes = []
+            references = []
+
+            seen = set()
+            hidden_seen = set()
+            stack = [node_id]
+
+            while stack:
+                current_id = stack.pop()
+
+                relationships = (
+                    self.relations.incoming(current_id)
+                    + self.relations.outgoing(current_id)
+                )
+
+                for target_id, _ in relationships:
+                    if target_id in seen:
+                        continue
+
+                    seen.add(target_id)
+
+                    if not is_eligible(target_id):
+                        continue
+
+                    # Verberg directe Transformer -> Terminal-relaties
+                    # wanneer de Terminal ook verbonden is met een
+                    # PowerTransformerEnd.
+                    if (
+                        current_id == start_id
+                        and get_type(current_id) == "cim:PowerTransformer"
+                        and get_type(target_id) == "cim:Terminal"
+                        and belongs_to_transformer_end(target_id)
+                    ):
+                        continue
+
+                    # Gefilterde objecten worden als verwijzing getoond.
+                    if should_skip_child(current_id, target_id):
+                        references.append(target_id)
+                        continue
+
+                    target_type = get_type(target_id)
+
+                    # Connectivity-objecten transparant doorlopen.
+                    if target_type in hidden_types:
+                        if (
+                            target_id not in hidden_seen
+                            and target_id not in expanded_subtrees
+                        ):
+                            hidden_seen.add(target_id)
+                            expanded_subtrees.add(target_id)
+                            stack.append(target_id)
+
+                        continue
+
+                    # Bestaande objecten worden als verwijzing getoond.
+                    if target_id in expanded_subtrees:
+                        if target_id != current_id:
+                            references.append(target_id)
+                    else:
+                        new_nodes.append(target_id)
+
+            return new_nodes, references
+
         while queue:
             node_id, parent_id, depth, parent_node_id = queue.popleft()
 
             if depth > 1 and get_type(node_id) in limited_types:
                 continue
 
-            relationships = (
-                self.relations.incoming(node_id)
-                + self.relations.outgoing(node_id)
-            )
-
-            seen = set()
-            new_nodes = []
-            references = []
-
-            for target_id, _ in relationships:
-                if target_id in seen:
-                    continue
-
-                seen.add(target_id)
-
-                if not is_eligible(target_id):
-                    continue
-
-                # Verberg directe Transformer -> Terminal-relaties
-                # wanneer de Terminal ook verbonden is met een PowerTransformerEnd.
-                if (
-                    node_id == start_id
-                    and get_type(node_id) == "cim:PowerTransformer"
-                    and get_type(target_id) == "cim:Terminal"
-                    and belongs_to_transformer_end(target_id)
-                ):
-                    continue
-
-                # Gefilterde objecten worden als verwijzing getoond,
-                # maar niet als nieuwe tak uitgewerkt.
-                if should_skip_child(node_id, target_id):
-                    references.append(target_id)
-                    continue
-
-                if target_id in expanded_subtrees:
-                    if target_id != parent_node_id and target_id != node_id:
-                        references.append(target_id)
-                else:
-                    new_nodes.append(target_id)
+            new_nodes, references = collect_targets(node_id)
 
             if depth >= max_depth:
                 if recursive:
@@ -206,6 +249,7 @@ class TreeVisualiser:
                             str(uuid4()),
                             parent=parent_id,
                         )
+
                 continue
 
             selected = new_nodes[:max_children]
@@ -220,6 +264,7 @@ class TreeVisualiser:
                 )
 
                 expanded_subtrees.add(target_id)
+
                 queue.append(
                     (target_id, child_id, depth + 1, node_id)
                 )
@@ -247,7 +292,8 @@ class TreeVisualiser:
         start_id: str,
         pattern: list[str],
         hide_connectivity: bool = False,
-        full_id: bool = False
+        full_id: bool = False,
+        maximum_children: int = 5,
     ):
         if start_id is None:
             raise ValueError("start_id must be specified")
@@ -264,7 +310,8 @@ class TreeVisualiser:
             start_id=start_id,
             pattern=pattern,
             hide_connectivity=hide_connectivity,
-            full_id=full_id
+            full_id=full_id,
+            maximum_children=maximum_children,
         )
 
         tree.show()
@@ -275,6 +322,7 @@ class TreeVisualiser:
         pattern: list,
         hide_connectivity: bool = False,
         full_id: bool = False,
+        maximum_children: int = 5,
     ) -> Tree:
         """
         Bouw een boom op basis van een expliciet patroon van CIM-types.
@@ -284,10 +332,16 @@ class TreeVisualiser:
 
         Met hide_connectivity=True worden Terminal en ConnectivityNode
         wel gevolgd, maar niet weergegeven in de boom.
+
+        maximum_children begrenst het aantal zichtbare kinderen
+        per boomnode.
         """
 
         if not pattern:
             raise ValueError("pattern mag niet leeg zijn")
+
+        if maximum_children < 0:
+            raise ValueError("maximum_children must be >= 0")
 
         levels = [
             [level] if isinstance(level, str) else list(level)
@@ -295,7 +349,9 @@ class TreeVisualiser:
         ]
 
         if any(not level for level in levels):
-            raise ValueError("Elk pattern-niveau moet minstens één type bevatten")
+            raise ValueError(
+                "Elk pattern-niveau moet minstens één type bevatten"
+            )
 
         if start_id not in self.nodes:
             raise ValueError(f"Unknown start_id: {start_id}")
@@ -358,6 +414,12 @@ class TreeVisualiser:
             root_tree_id,
         )
 
+        # Aantallen per zichtbare boomnode.
+        # Dit zorgt ervoor dat ook kinderen via meerdere verborgen
+        # connectivity-objecten gezamenlijk worden begrensd.
+        child_counts = {}
+        omitted_counts = {}
+
         def expand(
             node_id,
             parent_tree_id,
@@ -382,6 +444,14 @@ class TreeVisualiser:
                 child_tree_id = parent_tree_id
 
                 if not hidden:
+                    count = child_counts.get(parent_tree_id, 0)
+
+                    if count >= maximum_children:
+                        omitted_counts[parent_tree_id] = (
+                            omitted_counts.get(parent_tree_id, 0) + 1
+                        )
+                        continue
+
                     child_tree_id = str(uuid4())
 
                     tree.create_node(
@@ -389,6 +459,8 @@ class TreeVisualiser:
                         child_tree_id,
                         parent=parent_tree_id,
                     )
+
+                    child_counts[parent_tree_id] = count + 1
 
                 expand(
                     match_id,
@@ -403,5 +475,13 @@ class TreeVisualiser:
             1,
             {start_id},
         )
+
+        # Voeg de aanduidingen voor weggelaten kinderen achteraf toe.
+        for parent_tree_id, omitted in omitted_counts.items():
+            tree.create_node(
+                f"... ({omitted} more)",
+                str(uuid4()),
+                parent=parent_tree_id,
+            )
 
         return tree
