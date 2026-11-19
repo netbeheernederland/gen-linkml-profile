@@ -271,6 +271,31 @@ def template(templatefile, var, delimiter):
         raise ClickException(str(e))
 
 
+TREE_PATTERNS = {
+    'SS2': [
+        'cim:Substation',
+        ['cim:PowerTransformer', 'cim:VoltageLevel'],
+        ['cim:PowerTransformerEnd', 'cim:BaseVoltage'],
+        'cim:Terminal',
+        'cim:ConnectivityNode',
+        'cim:VoltageLevel',
+    ],
+    'EC': [
+        'cim:EnergyConsumer',
+        ['cim:Location', 'cim:UsagePoint'],
+        'cim:StreetAddress',
+        'cim:StreetDetail'
+    ],
+    'PTE': [
+        'cim:PowerTransformerEnd',
+        'cim:Terminal',
+        'cim:TopologicalNode',
+        'cim:Terminal',
+        'cim:PowerTransformerEnd'
+    ],
+}
+
+
 @cli.command()
 @option('--root-id', help='Root @id')
 @option('--depth', type=int, default=3, help='Recursion depth')
@@ -278,22 +303,28 @@ def template(templatefile, var, delimiter):
         help='Maximum number of children to display for each parent')
 @option('--full-id', is_flag=True, default=False,
         help='Use full @id in output')
-@option('--recursive', is_flag=True, default=False,
-        help='Include the node that caused graph recursion to stop')
+@option('--hide-connectivity', is_flag=True, default=False,
+        help='Hide cim:ConnectivityNode-s and cim:Terminal-s in pattern output')
 @option('--exclude', '-e', multiple=True, help='Type(s) to exclude from output')
 @argument('files', nargs=-1, type=File('rt'))
-def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
+def tree(files, root_id, depth, max_children, full_id, hide_connectivity, exclude):
     """Visualise a JSON-LD as tree"""
+
     from .tree_visualiser import TreeVisualiser
     from .jsonld_store import JsonLdStore
     from .relation_index import RelationIndex
-    from click import prompt, clear
+    from click import prompt, clear, Choice
 
-    exclude = exclude if exclude is not None else []
-    nodes = JsonLdStore(files, index_dir=".jsonld_index", cache_size=1000)
+    nodes = JsonLdStore(
+        files,
+        index_dir=".jsonld_index",
+        cache_size=1000,
+    )
     relations = RelationIndex(nodes)
     visualiser = TreeVisualiser(nodes, relations)
+
     start_id = root_id
+    selected_pattern = None
 
     while True:
         clear()
@@ -301,41 +332,84 @@ def tree(files, root_id, depth, max_children, full_id, recursive, exclude):
 
         if root_id:
             try:
-                visualiser.show(
-                    root_id,
-                    depth,
-                    max_children,
-                    full_id,
-                    recursive,
-                    exclude,
-                )
-            except ValueError:
-                echo('Invalid root ID')
+                if selected_pattern is None:
+                    visualiser.show(
+                        root_id,
+                        depth,
+                        max_children,
+                        full_id,
+                        exclude,
+                    )
+                else:
+                    visualiser.show_pattern(
+                        root_id,
+                        TREE_PATTERNS[selected_pattern],
+                        hide_connectivity,
+                        full_id,
+                    )
+
+            except ValueError as exc:
+                echo(f'Invalid root ID or pattern: {exc}')
+
         else:
             echo('No root node selected.')
 
         echo()
+
         command = prompt(
-            'Root @id (d for depth, m for children, r to reset, q to quit)',
+            'Root @id (p: pattern, t: regular tree, '
+            'd: depth, m: children, r: reset, h: hide conn. '
+            'q: quit)',
             default=root_id or '',
         )
 
+        command = command.strip()
+
         if command.lower() == 'q':
             break
+
         elif command.lower() == 'r':
+            selected_pattern = None
             root_id = start_id
+
+        elif command.lower() == 't':
+            selected_pattern = None
+
+        elif command.lower() == 'h':
+            hide_connectivity = not hide_connectivity
+
+        elif command.lower() == 'i':
+            full_id = not full_id
+
+        elif command.lower() == 'p':
+            if not TREE_PATTERNS:
+                echo('No patterns defined.')
+                continue
+
+            selected_pattern = prompt(
+                'Select pattern',
+                type=Choice(list(TREE_PATTERNS.keys())),
+                default=(
+                    selected_pattern
+                    if selected_pattern in TREE_PATTERNS
+                    else list(TREE_PATTERNS.keys())[0]
+                ),
+            )
+
         elif command.lower() == 'd':
             depth = prompt(
                 'Recursion depth',
                 default=depth,
                 type=int,
             )
+
         elif command.lower() == 'm':
             max_children = prompt(
                 'Maximum children',
                 default=max_children,
                 type=int,
             )
+
         else:
             root_id = command
 
