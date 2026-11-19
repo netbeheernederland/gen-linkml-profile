@@ -344,7 +344,6 @@ def tree(files, root_id, depth, max_children, full_id, hide_connectivity, exclud
                         max_children,
                         full_id,
                         exclude,
-                        hide_connectivity
                     )
                 else:
                     visualiser.show_pattern(
@@ -352,7 +351,6 @@ def tree(files, root_id, depth, max_children, full_id, hide_connectivity, exclud
                         TREE_PATTERNS[selected_pattern],
                         hide_connectivity,
                         full_id,
-                        max_children
                     )
 
             except ValueError as exc:
